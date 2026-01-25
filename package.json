@@ -1,7 +1,21 @@
 {
-    "name": "netlify-example-hello-functions",
-    "version": "1.0.0",
-    "description": "A site to show a hello world example of using Netlify Functions",
-    "author": "Netlify",
-    "license": "ISC"
+  "name": "image-compress-netlify",
+  "version": "1.0.0",
+  "description": "Image compression and format conversion tool for Netlify functions with freeimage.host upload",
+  "main": "index.js",
+  "scripts": {
+    "dev": "netlify dev",
+    "start": "netlify dev"
+  },
+  "dependencies": {
+    "sharp": "^0.33.0",
+    "axios": "^1.6.0",
+    "form-data": "^4.0.0"
+  },
+  "devDependencies": {
+    "netlify-cli": "^17.0.0"
+  },
+  "engines": {
+    "node": "18.x"
+  }
 }
