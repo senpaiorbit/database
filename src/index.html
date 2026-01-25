@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Image Compressor & Converter</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+  <nav class="navbar navbar-dark bg-dark">
+    <div class="container">
+      <span class="navbar-brand mb-0 h1">Image Compressor</span>
+    </div>
+  </nav>
+
+  <main class="container my-4">
+    <div class="row g-3">
+      <div class="col-lg-6">
+        <div class="card">
+          <div class="card-header">Upload & Compress</div>
+          <div class="card-body">
+            <input id="imageInput" type="file" class="form-control mb-3" accept="image/*">
+            <div id="previewContainer" class="d-none mb-3">
+              <img id="previewImage" class="img-fluid rounded mb-2" style="max-height:240px;">
+              <div id="originalStats" class="small text-muted"></div>
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label">Output Format</label>
+              <select id="outputFormat" class="form-select">
+                <option value="webp">webp</option>
+                <option value="jpeg">jpeg</option>
+                <option value="png">png</option>
+                <option value="avif">avif</option>
+                <option value="tiff">tiff</option>
+              </select>
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label">Quality</label>
+              <select id="qualityLevel" class="form-select">
+                <option value="low">low</option>
+                <option value="medium" selected>medium</option>
+                <option value="high">high</option>
+              </select>
+            </div>
+
+            <div class="row g-2 mb-3">
+              <div class="col">
+                <input id="resizeWidth" class="form-control" type="number" placeholder="Width px">
+              </div>
+              <div class="col">
+                <input id="resizeHeight" class="form-control" type="number" placeholder="Height px">
+              </div>
+            </div>
+
+            <div class="d-grid gap-2">
+              <button id="compressBtn" class="btn btn-success" disabled>Compress</button>
+            </div>
+
+            <div id="loadingState" class="mt-3 d-none">
+              <div class="spinner-border text-primary"></div>
+              <span class="ms-2">Processing...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-6">
+        <div class="card">
+          <div class="card-header">Result</div>
+          <div class="card-body">
+            <div id="resultContainer" class="d-none">
+              <img id="compressedImage" class="img-fluid rounded mb-2" style="max-height:240px;">
+              <div class="small text-muted">Original: <span id="originalSize"></span> — Compressed: <span id="compressedSize"></span> — Rate: <strong id="compressionRate"></strong></div>
+              <div class="mt-3 d-grid gap-2">
+                <button id="downloadBtn" class="btn btn-primary">Download</button>
+                <button id="uploadBtn" class="btn btn-info">Upload to freeimage.host</button>
+                <button id="saveLibraryBtn" class="btn btn-secondary">Save to Library</button>
+              </div>
+            </div>
+            <div id="noResult" class="text-muted text-center py-4">
+              Compressed result will appear here
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <section class="mt-4">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span>Image Library</span>
+          <button id="clearLibraryBtn" class="btn btn-sm btn-outline-danger">Clear</button>
+        </div>
+        <div class="card-body">
+          <div id="libraryContainer" class="row gy-3">
+            <div class="col-12 text-center text-muted">No images in library</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/imageCompressor.js"></script>
+  <script src="js/imageLibrary.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
