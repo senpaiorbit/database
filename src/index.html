@@ -1,112 +1,245 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Image Compressor & Converter</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="css/style.css" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Compressor & Converter</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px 0;
+        }
+        .main-container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .card {
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+        }
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            transition: all 0.3s;
+            background: #f8f9fa;
+        }
+        .upload-area:hover {
+            border-color: #764ba2;
+            background: #e9ecef;
+        }
+        .upload-area.dragover {
+            background: #667eea;
+            color: white;
+            border-color: #764ba2;
+        }
+        .preview-container {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .preview-box {
+            flex: 1;
+            text-align: center;
+        }
+        .preview-box img {
+            max-width: 100%;
+            max-height: 300px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        .image-info {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-size: 0.9em;
+        }
+        .library-item {
+            position: relative;
+            margin-bottom: 15px;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+        .library-item:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+        }
+        .library-item img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+        }
+        .library-item-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+            padding: 10px;
+            color: white;
+        }
+        .library-item-actions {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            gap: 5px;
+        }
+        .btn-icon {
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+        .progress-container {
+            display: none;
+            margin-top: 15px;
+        }
+        .format-selector {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 15px;
+        }
+        .format-btn {
+            min-width: 80px;
+        }
+        .stats-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+        }
+        .stats-number {
+            font-size: 2.5em;
+            font-weight: bold;
+        }
+        .stats-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+    </style>
 </head>
 <body>
-  <nav class="navbar navbar-dark bg-dark">
-    <div class="container">
-      <span class="navbar-brand mb-0 h1">Image Compressor</span>
-    </div>
-  </nav>
+    <div class="main-container">
+        <!-- Header -->
+        <div class="text-center text-white mb-4">
+            <h1 class="display-4 fw-bold"><i class="bi bi-images"></i> Image Compressor Pro</h1>
+            <p class="lead">Compress, Convert & Store Your Images</p>
+        </div>
 
-  <main class="container my-4">
-    <div class="row g-3">
-      <div class="col-lg-6">
+        <!-- Stats Row -->
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="stats-card">
+                    <div class="stats-number" id="totalImages">0</div>
+                    <div class="stats-label">Total Images</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stats-card">
+                    <div class="stats-number" id="totalSize">0 KB</div>
+                    <div class="stats-label">Total Size</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stats-card">
+                    <div class="stats-number" id="savedSpace">0%</div>
+                    <div class="stats-label">Space Saved</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Card - Upload & Compress -->
         <div class="card">
-          <div class="card-header">Upload & Compress</div>
-          <div class="card-body">
-            <input id="imageInput" type="file" class="form-control mb-3" accept="image/*">
-            <div id="previewContainer" class="d-none mb-3">
-              <img id="previewImage" class="img-fluid rounded mb-2" style="max-height:240px;">
-              <div id="originalStats" class="small text-muted"></div>
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-cloud-upload"></i> Upload & Compress Image</h5>
             </div>
+            <div class="card-body">
+                <div class="upload-area" id="uploadArea">
+                    <i class="bi bi-cloud-arrow-up display-1 text-primary"></i>
+                    <h5 class="mt-3">Drag & Drop or Click to Upload</h5>
+                    <p class="text-muted">Supports: JPG, PNG, WebP, GIF, BMP</p>
+                    <input type="file" id="fileInput" accept="image/*" style="display: none;">
+                    <button class="btn btn-primary mt-2" onclick="document.getElementById('fileInput').click()">
+                        <i class="bi bi-folder2-open"></i> Choose File
+                    </button>
+                </div>
 
-            <div class="mb-2">
-              <label class="form-label">Output Format</label>
-              <select id="outputFormat" class="form-select">
-                <option value="webp">webp</option>
-                <option value="jpeg">jpeg</option>
-                <option value="png">png</option>
-                <option value="avif">avif</option>
-                <option value="tiff">tiff</option>
-              </select>
-            </div>
+                <!-- Format Selection -->
+                <div class="format-selector" id="formatSelector" style="display: none;">
+                    <button class="btn btn-outline-primary format-btn" data-format="jpeg">JPEG</button>
+                    <button class="btn btn-outline-primary format-btn" data-format="png">PNG</button>
+                    <button class="btn btn-outline-primary format-btn" data-format="webp">WebP</button>
+                    <button class="btn btn-outline-primary format-btn" data-format="gif">GIF</button>
+                </div>
 
-            <div class="mb-2">
-              <label class="form-label">Quality</label>
-              <select id="qualityLevel" class="form-select">
-                <option value="low">low</option>
-                <option value="medium" selected>medium</option>
-                <option value="high">high</option>
-              </select>
-            </div>
+                <!-- Quality Slider -->
+                <div id="qualitySlider" style="display: none; margin-top: 20px;">
+                    <label for="quality" class="form-label">Compression Quality: <span id="qualityValue">80</span>%</label>
+                    <input type="range" class="form-range" id="quality" min="10" max="100" value="80">
+                </div>
 
-            <div class="row g-2 mb-3">
-              <div class="col">
-                <input id="resizeWidth" class="form-control" type="number" placeholder="Width px">
-              </div>
-              <div class="col">
-                <input id="resizeHeight" class="form-control" type="number" placeholder="Height px">
-              </div>
-            </div>
+                <!-- Preview -->
+                <div class="preview-container" id="previewContainer" style="display: none;">
+                    <div class="preview-box">
+                        <h6>Original</h6>
+                        <img id="originalImage" alt="Original">
+                        <div class="image-info" id="originalInfo"></div>
+                    </div>
+                    <div class="preview-box">
+                        <h6>Compressed</h6>
+                        <img id="compressedImage" alt="Compressed">
+                        <div class="image-info" id="compressedInfo"></div>
+                        <button class="btn btn-success mt-3" id="uploadBtn">
+                            <i class="bi bi-cloud-upload"></i> Upload to FreeImage.host
+                        </button>
+                    </div>
+                </div>
 
-            <div class="d-grid gap-2">
-              <button id="compressBtn" class="btn btn-success" disabled>Compress</button>
+                <!-- Progress Bar -->
+                <div class="progress-container" id="progressContainer">
+                    <div class="progress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" id="progressBar" role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <p class="text-center mt-2" id="progressText">Uploading...</p>
+                </div>
             </div>
-
-            <div id="loadingState" class="mt-3 d-none">
-              <div class="spinner-border text-primary"></div>
-              <span class="ms-2">Processing...</span>
-            </div>
-          </div>
         </div>
-      </div>
 
-      <div class="col-lg-6">
+        <!-- Image Library -->
         <div class="card">
-          <div class="card-header">Result</div>
-          <div class="card-body">
-            <div id="resultContainer" class="d-none">
-              <img id="compressedImage" class="img-fluid rounded mb-2" style="max-height:240px;">
-              <div class="small text-muted">Original: <span id="originalSize"></span> — Compressed: <span id="compressedSize"></span> — Rate: <strong id="compressionRate"></strong></div>
-              <div class="mt-3 d-grid gap-2">
-                <button id="downloadBtn" class="btn btn-primary">Download</button>
-                <button id="uploadBtn" class="btn btn-info">Upload to freeimage.host</button>
-                <button id="saveLibraryBtn" class="btn btn-secondary">Save to Library</button>
-              </div>
+            <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-collection"></i> My Image Library</h5>
+                <button class="btn btn-sm btn-light" id="clearLibrary">
+                    <i class="bi bi-trash"></i> Clear All
+                </button>
             </div>
-            <div id="noResult" class="text-muted text-center py-4">
-              Compressed result will appear here
+            <div class="card-body">
+                <div class="row" id="imageLibrary">
+                    <div class="col-12 text-center text-muted py-5">
+                        <i class="bi bi-inbox display-1"></i>
+                        <p class="mt-3">No images yet. Upload some images to get started!</p>
+                    </div>
+                </div>
             </div>
-          </div>
         </div>
-      </div>
     </div>
 
-    <section class="mt-4">
-      <div class="card">
-        <div class="card-header d-flex justify-content-between align-items-center">
-          <span>Image Library</span>
-          <button id="clearLibraryBtn" class="btn btn-sm btn-outline-danger">Clear</button>
-        </div>
-        <div class="card-body">
-          <div id="libraryContainer" class="row gy-3">
-            <div class="col-12 text-center text-muted">No images in library</div>
-          </div>
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/api.js"></script>
-  <script src="js/imageCompressor.js"></script>
-  <script src="js/imageLibrary.js"></script>
-  <script src="js/app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>
