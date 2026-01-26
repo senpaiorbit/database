@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Movie JSON Upload</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    background: #0f172a;
+    color: #e5e7eb;
+    padding: 30px;
+  }
+  .box {
+    border: 2px dashed #38bdf8;
+    padding: 30px;
+    text-align: center;
+    border-radius: 10px;
+    margin-bottom: 20px;
+  }
+  textarea {
+    width: 100%;
+    height: 200px;
+    background: #020617;
+    color: #e5e7eb;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 10px;
+  }
+  button {
+    margin-top: 15px;
+    padding: 10px 20px;
+    background: #38bdf8;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    cursor: pointer;
+  }
+  .status {
+    margin-top: 15px;
+  }
+</style>
+</head>
+<body>
+
+<h2>📥 Movie JSON Upload (Admin)</h2>
+
+<div class="box" id="dropBox">
+  Drag & Drop JSON file here
+</div>
+
+<textarea id="jsonInput" placeholder="Or paste JSON here..."></textarea>
+
+<button onclick="upload()">Upload</button>
+
+<div class="status" id="status"></div>
+
+<script>
+const dropBox = document.getElementById('dropBox');
+const jsonInput = document.getElementById('jsonInput');
+const statusBox = document.getElementById('status');
+
+dropBox.ondragover = e => {
+  e.preventDefault();
+  dropBox.style.background = '#020617';
+};
+
+dropBox.ondrop = async e => {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  const text = await file.text();
+  jsonInput.value = text;
+};
+
+async function upload() {
+  try {
+    const res = await fetch('/api/m_upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: jsonInput.value
+    });
+    const data = await res.json();
+    statusBox.textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    statusBox.textContent = err.message;
+  }
+}
+</script>
+
+</body>
+</html>
