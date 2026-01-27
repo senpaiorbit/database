@@ -3,75 +3,87 @@ import { Pool } from "pg";
 const pool = new Pool({
   host: "db.boqfijmhywxsqqbhyyiq.supabase.co",
   user: "postgres",
-  password: process.env.db_pass, // set in Vercel ENV
+  password: process.env.db_pass,
   database: "postgres",
   port: 5432,
   ssl: { rejectUnauthorized: false }
 });
 
 export default async function handler(req, res) {
+  res.setHeader("Content-Type", "application/json");
+
+  // 🔍 DB PING
+  if (req.method === "GET" && req.query.ping) {
+    try {
+      const c = await pool.connect();
+      c.release();
+      return res.status(200).json({ db_connect: true });
+    } catch (e) {
+      return res.status(200).json({ db_connect: false, error: e.message });
+    }
+  }
+
   if (req.method !== "POST") {
     return res.status(405).json({ error: "POST only" });
   }
 
-  let payload;
+  let body;
   try {
-    payload = req.body;
+    body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
   } catch {
-    return res.status(400).json({ error: "Invalid JSON" });
+    return res.status(400).json({ error: "Invalid JSON payload" });
   }
 
-  if (!payload.movies || !Array.isArray(payload.movies)) {
-    return res.status(400).json({ error: "No movies array" });
+  if (!Array.isArray(body.movies)) {
+    return res.status(400).json({ error: "movies[] missing" });
   }
 
   const client = await pool.connect();
   let inserted = 0, skipped = 0;
+  const logs = [];
 
   try {
     await client.query("BEGIN");
+    logs.push("DB connected ✔");
 
-    for (const m of payload.movies) {
+    for (const m of body.movies) {
       if (!m.tmdb_id || !m.title) {
         skipped++;
+        logs.push(`Skipped: missing tmdb_id/title`);
         continue;
       }
 
-      const exists = await client.query(
-        "SELECT id FROM movies WHERE tmdb_id=$1",
+      const ex = await client.query(
+        "SELECT 1 FROM movies WHERE tmdb_id=$1",
         [m.tmdb_id]
       );
-      if (exists.rowCount) {
+      if (ex.rowCount) {
         skipped++;
+        logs.push(`Skipped existing TMDB ${m.tmdb_id}`);
         continue;
       }
 
-      // poster image
+      const clean = v => v?.replace(/[\[\]\(\)]/g, "") || null;
+
       const poster = await client.query(
-        "INSERT INTO images (tmdb, url) VALUES (false,$1) RETURNING id",
-        [m.poster.replace(/[\[\]\(\)]/g, "")]
+        "INSERT INTO images (tmdb,url) VALUES (false,$1) RETURNING id",
+        [clean(m.poster)]
       );
 
-      // backdrop image
-      const backdropUrl = m.backdrop?.header
-        ? m.backdrop.header.replace(/[\[\]\(\)]/g, "")
-        : null;
-
       let backdropId = null;
-      if (backdropUrl) {
+      if (m.backdrop?.header) {
         const b = await client.query(
-          "INSERT INTO images (tmdb, url) VALUES (false,$1) RETURNING id",
-          [backdropUrl]
+          "INSERT INTO images (tmdb,url) VALUES (false,$1) RETURNING id",
+          [clean(m.backdrop.header)]
         );
         backdropId = b.rows[0].id;
       }
 
-      // src (first iframe only)
       let srcId = null;
-      if (m.iframes?.length) {
+      if (m.iframes?.[0]?.src) {
         const s = await client.query(
           "INSERT INTO src (url) VALUES ($1) RETURNING id",
-          [m.iframes[0].src.replace(/[\[\]\(\)]/g, "")]
+          [clean(m.iframes[0].src)]
         );
         srcId = s.rows[0].id;
       }
@@ -95,14 +107,15 @@ export default async function handler(req, res) {
       );
 
       inserted++;
+      logs.push(`Inserted: ${m.title}`);
     }
 
     await client.query("COMMIT");
-    res.json({ success:true, inserted, skipped });
+    return res.json({ success:true, inserted, skipped, logs });
 
-  } catch (err) {
+  } catch (e) {
     await client.query("ROLLBACK");
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: e.message, logs });
   } finally {
     client.release();
   }
