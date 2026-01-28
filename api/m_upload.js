@@ -16,13 +16,13 @@ const pool = new Pool({
 export default async function handler(req, res) {
   res.setHeader("Content-Type", "application/json");
 
+  // DB ping
   if (req.method === "GET" && req.query.ping) {
     try {
-      const c = await pool.connect();
-      c.release();
+      await pool.query("SELECT 1");
       return res.json({ db_connect: true, inserted: 0, skipped: 0, logs: [] });
     } catch (e) {
-      return res.json({ db_connect: false, inserted: 0, skipped: 0, logs: [] });
+      return res.json({ db_connect: false, inserted: 0, skipped: 0, logs: [e.message] });
     }
   }
 
@@ -47,72 +47,77 @@ export default async function handler(req, res) {
     const movies = json.movies.filter(m => m?.tmdb_id && m?.title);
     logs.push(`Valid movies found: ${movies.length}`);
 
-    const client = await pool.connect();
-    await client.query("BEGIN");
-    logs.push("DB connected ✔");
-
     const clean = v =>
       typeof v === "string" ? v.replace(/[\[\]\(\)]/g, "") : null;
 
     for (const m of movies) {
-      const exists = await client.query(
-        "SELECT id FROM movies WHERE tmdb_id=$1",
-        [m.tmdb_id]
-      );
+      try {
+        // poster
+        const posterRes = await pool.query(
+          `INSERT INTO images (tmdb, url)
+           VALUES (false, $1)
+           RETURNING id`,
+          [clean(m.poster)]
+        );
+        const posterId = posterRes.rows[0].id;
 
-      if (exists.rowCount > 0) {
+        // backdrop
+        let backdropId = null;
+        if (m.backdrop?.header) {
+          const b = await pool.query(
+            `INSERT INTO images (tmdb, url)
+             VALUES (false, $1)
+             RETURNING id`,
+            [clean(m.backdrop.header)]
+          );
+          backdropId = b.rows[0].id;
+        }
+
+        // src
+        let srcId = null;
+        if (m.iframes?.[0]?.src) {
+          const s = await pool.query(
+            `INSERT INTO src (url)
+             VALUES ($1)
+             RETURNING id`,
+            [clean(m.iframes[0].src)]
+          );
+          srcId = s.rows[0].id;
+        }
+
+        // UPSERT movie (THIS IS THE KEY)
+        const result = await pool.query(
+          `INSERT INTO movies
+           (tmdb_id, title, overview, genres, rating, release_date,
+            poster_img_id, backdrop_img_id, src_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+           ON CONFLICT (tmdb_id) DO NOTHING`,
+          [
+            m.tmdb_id,
+            m.title,
+            m.description || null,
+            m.genres || [],
+            Math.round((m.rating || 0) * 10),
+            m.year ? `${m.year}-01-01` : null,
+            posterId,
+            backdropId,
+            srcId
+          ]
+        );
+
+        if (result.rowCount === 0) {
+          skipped++;
+          logs.push(`Skipped existing tmdb_id=${m.tmdb_id}`);
+        } else {
+          inserted++;
+          logs.push(`Inserted: ${m.title}`);
+        }
+
+      } catch (rowErr) {
         skipped++;
-        logs.push(`Skipped existing tmdb_id=${m.tmdb_id}`);
-        continue;
+        logs.push(`Row failed tmdb_id=${m.tmdb_id}: ${rowErr.message}`);
       }
-
-      const poster = await client.query(
-        "INSERT INTO images (tmdb,url) VALUES (false,$1) RETURNING id",
-        [clean(m.poster)]
-      );
-
-      let backdropId = null;
-      if (m.backdrop?.header) {
-        const b = await client.query(
-          "INSERT INTO images (tmdb,url) VALUES (false,$1) RETURNING id",
-          [clean(m.backdrop.header)]
-        );
-        backdropId = b.rows[0].id;
-      }
-
-      let srcId = null;
-      if (m.iframes?.[0]?.src) {
-        const s = await client.query(
-          "INSERT INTO src (url) VALUES ($1) RETURNING id",
-          [clean(m.iframes[0].src)]
-        );
-        srcId = s.rows[0].id;
-      }
-
-      await client.query(
-        `INSERT INTO movies
-        (tmdb_id,title,overview,genres,rating,release_date,
-         poster_img_id,backdrop_img_id,src_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-        [
-          m.tmdb_id,
-          m.title,
-          m.description || null,
-          m.genres || [],
-          Math.round((m.rating || 0) * 10),
-          m.year ? `${m.year}-01-01` : null,
-          poster.rows[0].id,
-          backdropId,
-          srcId
-        ]
-      );
-
-      inserted++;
-      logs.push(`Inserted: ${m.title}`);
     }
-
-    await client.query("COMMIT");
-    client.release();
 
     return res.json({ success: true, inserted, skipped, logs });
 
