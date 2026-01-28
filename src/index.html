@@ -1,120 +1,33 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Movie JSON File Upload</title>
-
-<style>
-body{margin:0;font-family:monospace;background:#020617;color:#e5e7eb}
-.container{max-width:900px;margin:auto;padding:16px}
-.drop{
-  border:2px dashed #38bdf8;
-  padding:30px;
-  text-align:center;
-  cursor:pointer;
-}
-button{
-  padding:10px 18px;
-  background:#22c55e;
-  border:0;
-  font-size:16px;
-  margin-top:10px;
-}
-.log{
-  background:#000;
-  padding:10px;
-  margin-top:12px;
-  height:220px;
-  overflow:auto;
-}
-.status{margin-bottom:10px}
-@media(max-width:600px){
-  .drop{padding:20px}
-}
-</style>
+  <title>Upload Movies JSON</title>
 </head>
-
 <body>
-<div class="container">
+  <h2>Upload movies.js.json</h2>
 
-<h2>📦 Large Movie JSON Upload</h2>
+  <form id="form">
+    <input type="file" name="file" accept=".json" required />
+    <button type="submit">Upload</button>
+  </form>
 
-<div class="status" id="db">DB: checking…</div>
+  <pre id="out"></pre>
 
-<div class="drop" id="drop">
-  📂 Drop JSON file here or tap to select
-</div>
+  <script>
+    const form = document.getElementById("form");
+    const out = document.getElementById("out");
 
-<input type="file" id="file" accept=".json" hidden>
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
 
-<button onclick="upload()">Upload File</button>
+      const res = await fetch("/api/upload-movies", {
+        method: "POST",
+        body: fd
+      });
 
-<div class="log" id="log"></div>
-
-</div>
-
-<script>
-const fileInput = document.getElementById("file");
-const drop = document.getElementById("drop");
-const logBox = document.getElementById("log");
-const db = document.getElementById("db");
-
-let file;
-
-function log(t){
-  logBox.textContent += t + "\n";
-  logBox.scrollTop = 99999;
-}
-
-drop.onclick = () => fileInput.click();
-
-drop.ondragover = e => e.preventDefault();
-drop.ondrop = e => {
-  e.preventDefault();
-  file = e.dataTransfer.files[0];
-  log("Selected: " + file.name);
-};
-
-fileInput.onchange = e => {
-  file = e.target.files[0];
-  log("Selected: " + file.name);
-};
-
-async function checkDB(){
-  const r = await fetch("/api/m_upload?ping=1");
-  const j = await r.json();
-  db.textContent = "DB: " + (j.db_connect ? "Connected ✔" : "Failed ❌");
-}
-checkDB();
-
-async function upload(){
-  if(!file){
-    log("❌ No file selected");
-    return;
-  }
-
-  const fd = new FormData();
-  fd.append("file", file);
-
-  log("Uploading file…");
-
-  const res = await fetch("/api/m_upload", {
-    method:"POST",
-    body: fd
-  });
-
-  const text = await res.text();
-
-  try{
-    const j = JSON.parse(text);
-    (j.logs||[]).forEach(l=>log(l));
-    log("DONE ✔ Inserted:"+j.inserted+" Skipped:"+j.skipped);
-  }catch{
-    log("❌ Server returned non-JSON:");
-    log(text);
-  }
-}
-</script>
+      out.textContent = JSON.stringify(await res.json(), null, 2);
+    };
+  </script>
 </body>
 </html>
