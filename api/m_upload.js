@@ -5,12 +5,9 @@ export const config = {
 
 import { Pool } from "pg";
 
+// ⚠️ USE POOLER URL (IPv4)
 const pool = new Pool({
-  host: process.env.DB_HOST,
-  port: Number(process.env.DB_PORT),
-  user: process.env.DB_USER,
-  password: process.env.DB_PASS,
-  database: process.env.DB_NAME,
+  connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
@@ -24,15 +21,10 @@ export default async function handler(req, res) {
     if (req.method === "GET" && req.query.ping) {
       try {
         const c = await pool.connect();
-        await c.query("SELECT 1");
         c.release();
         return res.json({ db_connect: true });
       } catch (e) {
-        return res.json({
-          db_connect: false,
-          reason: "IPv4 / Pooler / ENV issue",
-          error: e.message
-        });
+        return res.json({ db_connect: false, error: e.message });
       }
     }
 
@@ -40,11 +32,12 @@ export default async function handler(req, res) {
       return res.status(405).json({ error: "POST only" });
     }
 
+    /* =====================
+       SAFE JSON PARSE
+    ===================== */
     let body;
     try {
-      body = typeof req.body === "string"
-        ? JSON.parse(req.body)
-        : req.body;
+      body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
     } catch {
       return res.status(400).json({ error: "Invalid JSON" });
     }
@@ -53,17 +46,16 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "movies[] missing" });
     }
 
-    // 🚫 HARD LIMIT to avoid timeout
+    // ⛔ HARD LIMIT (important for serverless)
     const movies = body.movies.slice(0, 20);
 
     const client = await pool.connect();
     const logs = [];
-    let inserted = 0;
-    let skipped = 0;
+    let inserted = 0, skipped = 0;
 
     try {
       await client.query("BEGIN");
-      logs.push("DB connected ✔");
+      logs.push("DB connected via pooler ✔");
 
       for (const m of movies) {
         if (!m?.tmdb_id || !m?.title) {
@@ -71,19 +63,17 @@ export default async function handler(req, res) {
           continue;
         }
 
-        const exists = await client.query(
+        const ex = await client.query(
           "SELECT 1 FROM movies WHERE tmdb_id=$1",
           [m.tmdb_id]
         );
-        if (exists.rowCount) {
+        if (ex.rowCount) {
           skipped++;
           continue;
         }
 
         const clean = v =>
-          typeof v === "string"
-            ? v.replace(/[\[\]\(\)]/g, "")
-            : null;
+          typeof v === "string" ? v.replace(/[\[\]\(\)]/g, "") : null;
 
         const poster = await client.query(
           "INSERT INTO images (tmdb,url) VALUES (false,$1) RETURNING id",
@@ -135,6 +125,7 @@ export default async function handler(req, res) {
 
       return res.json({
         success: true,
+        db_connect: true,
         inserted,
         skipped,
         logs
@@ -151,8 +142,9 @@ export default async function handler(req, res) {
     }
 
   } catch (fatal) {
+    // 🚨 Prevents Vercel HTML error page
     return res.status(500).json({
-      error: "FATAL_FUNCTION_ERROR",
+      error: "FATAL_ERROR",
       message: fatal.message
     });
   }
