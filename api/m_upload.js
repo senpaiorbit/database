@@ -1,127 +1,140 @@
+import { IncomingForm } from "formidable";
+import fs from "fs";
+import { Pool } from "pg";
+
 export const config = {
-  runtime: "nodejs",
-  maxDuration: 10,
   api: { bodyParser: false }
 };
-
-import { Pool } from "pg";
-import formidable from "formidable";
-import fs from "fs";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
+const CHUNK_SIZE = 50; // ✅ safe size for Vercel
+
+function clean(v) {
+  if (typeof v === "string") {
+    return v.replace(/[\[\]\(\)]/g, "");
+  }
+  return null;
+}
+
 export default async function handler(req, res) {
-  res.setHeader("Content-Type", "application/json");
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "POST only" });
+  }
 
-  // DB ping
-  if (req.method === "GET" && req.query.ping) {
+  const form = new IncomingForm();
+
+  form.parse(req, async (err, fields, files) => {
+    if (err) return res.status(500).json({ error: "Upload failed" });
+
+    const file = files.file;
+    if (!file) return res.status(400).json({ error: "No file uploaded" });
+
+    let inserted = 0;
+    let skipped = 0;
+
     try {
-      await pool.query("SELECT 1");
-      return res.json({ db_connect: true, inserted: 0, skipped: 0, logs: [] });
-    } catch (e) {
-      return res.json({ db_connect: false, inserted: 0, skipped: 0, logs: [e.message] });
-    }
-  }
+      const raw = fs.readFileSync(file.filepath, "utf-8");
+      const data = JSON.parse(raw);
+      const movies = data.movies || [];
 
-  let inserted = 0;
-  let skipped = 0;
-  const logs = [];
+      const client = await pool.connect();
 
-  try {
-    const form = formidable({ maxFileSize: 50 * 1024 * 1024 });
-    const [, files] = await form.parse(req);
-    const file = files.file?.[0];
-
-    if (!file) {
-      return res.json({ inserted, skipped, logs });
-    }
-
-    const json = JSON.parse(fs.readFileSync(file.filepath, "utf8"));
-    if (!Array.isArray(json.movies)) {
-      return res.json({ inserted, skipped, logs });
-    }
-
-    const movies = json.movies.filter(m => m?.tmdb_id && m?.title);
-    logs.push(`Valid movies found: ${movies.length}`);
-
-    const clean = v =>
-      typeof v === "string" ? v.replace(/[\[\]\(\)]/g, "") : null;
-
-    for (const m of movies) {
       try {
-        // poster
-        const posterRes = await pool.query(
-          `INSERT INTO images (tmdb, url)
-           VALUES (false, $1)
-           RETURNING id`,
-          [clean(m.poster)]
-        );
-        const posterId = posterRes.rows[0].id;
+        for (let i = 0; i < movies.length; i += CHUNK_SIZE) {
+          const chunk = movies.slice(i, i + CHUNK_SIZE);
 
-        // backdrop
-        let backdropId = null;
-        if (m.backdrop?.header) {
-          const b = await pool.query(
-            `INSERT INTO images (tmdb, url)
-             VALUES (false, $1)
-             RETURNING id`,
-            [clean(m.backdrop.header)]
-          );
-          backdropId = b.rows[0].id;
+          await client.query("BEGIN");
+
+          for (const m of chunk) {
+            if (!m.tmdb_id || !m.title) {
+              skipped++;
+              continue;
+            }
+
+            const exists = await client.query(
+              "SELECT 1 FROM movies WHERE tmdb_id=$1",
+              [m.tmdb_id]
+            );
+
+            if (exists.rowCount > 0) {
+              skipped++;
+              continue;
+            }
+
+            // poster
+            const posterRes = await client.query(
+              "INSERT INTO images (tmdb, url) VALUES (false, $1) RETURNING id",
+              [clean(m.poster)]
+            );
+            const posterId = posterRes.rows[0].id;
+
+            // backdrop
+            let backdropId = null;
+            if (m.backdrop?.header) {
+              const backRes = await client.query(
+                "INSERT INTO images (tmdb, url) VALUES (false, $1) RETURNING id",
+                [clean(m.backdrop.header)]
+              );
+              backdropId = backRes.rows[0].id;
+            }
+
+            // src
+            let srcId = null;
+            if (m.iframes?.length) {
+              const srcRes = await client.query(
+                "INSERT INTO src (url) VALUES ($1) RETURNING id",
+                [clean(m.iframes[0].src)]
+              );
+              srcId = srcRes.rows[0].id;
+            }
+
+            await client.query(
+              `INSERT INTO movies
+              (tmdb_id, title, overview, genres, rating, release_date,
+               poster_img_id, backdrop_img_id, src_id)
+              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+              [
+                m.tmdb_id,
+                m.title,
+                m.description || null,
+                [],
+                Math.round((m.rating || 0) * 10),
+                `${m.year || "2000"}-01-01`,
+                posterId,
+                backdropId,
+                srcId
+              ]
+            );
+
+            inserted++;
+          }
+
+          await client.query("COMMIT");
+
+          // ⏸️ short pause to avoid DB overload
+          await new Promise(r => setTimeout(r, 150));
         }
-
-        // src
-        let srcId = null;
-        if (m.iframes?.[0]?.src) {
-          const s = await pool.query(
-            `INSERT INTO src (url)
-             VALUES ($1)
-             RETURNING id`,
-            [clean(m.iframes[0].src)]
-          );
-          srcId = s.rows[0].id;
-        }
-
-        // UPSERT movie (THIS IS THE KEY)
-        const result = await pool.query(
-          `INSERT INTO movies
-           (tmdb_id, title, overview, genres, rating, release_date,
-            poster_img_id, backdrop_img_id, src_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-           ON CONFLICT (tmdb_id) DO NOTHING`,
-          [
-            m.tmdb_id,
-            m.title,
-            m.description || null,
-            m.genres || [],
-            Math.round((m.rating || 0) * 10),
-            m.year ? `${m.year}-01-01` : null,
-            posterId,
-            backdropId,
-            srcId
-          ]
-        );
-
-        if (result.rowCount === 0) {
-          skipped++;
-          logs.push(`Skipped existing tmdb_id=${m.tmdb_id}`);
-        } else {
-          inserted++;
-          logs.push(`Inserted: ${m.title}`);
-        }
-
-      } catch (rowErr) {
-        skipped++;
-        logs.push(`Row failed tmdb_id=${m.tmdb_id}: ${rowErr.message}`);
+      } catch (e) {
+        await client.query("ROLLBACK");
+        throw e;
+      } finally {
+        client.release();
       }
+
+      res.json({
+        success: true,
+        inserted,
+        skipped,
+        total: movies.length
+      });
+
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "JSON or DB error" });
     }
-
-    return res.json({ success: true, inserted, skipped, logs });
-
-  } catch (e) {
-    return res.json({ inserted, skipped, error: e.message, logs });
-  }
+  });
 }
