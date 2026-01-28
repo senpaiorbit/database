@@ -1,11 +1,13 @@
 export const config = {
   runtime: "nodejs",
-  maxDuration: 10
+  maxDuration: 10,
+  api: { bodyParser: false } // REQUIRED for file upload
 };
 
 import { Pool } from "pg";
+import formidable from "formidable";
+import fs from "fs";
 
-// ⚠️ USE POOLER URL (IPv4)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
@@ -14,66 +16,59 @@ const pool = new Pool({
 export default async function handler(req, res) {
   res.setHeader("Content-Type", "application/json");
 
-  try {
-    /* =====================
-       DB STATUS CHECK
-    ===================== */
-    if (req.method === "GET" && req.query.ping) {
-      try {
-        const c = await pool.connect();
-        c.release();
-        return res.json({ db_connect: true });
-      } catch (e) {
-        return res.json({ db_connect: false, error: e.message });
-      }
-    }
-
-    if (req.method !== "POST") {
-      return res.status(405).json({ error: "POST only" });
-    }
-
-    /* =====================
-       SAFE JSON PARSE
-    ===================== */
-    let body;
+  /* ========= DB PING ========= */
+  if (req.method === "GET" && req.query.ping) {
     try {
-      body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-    } catch {
-      return res.status(400).json({ error: "Invalid JSON" });
+      const c = await pool.connect();
+      c.release();
+      return res.json({ db_connect: true });
+    } catch (e) {
+      return res.json({ db_connect: false, error: e.message });
+    }
+  }
+
+  if (req.method !== "POST") {
+    return res.status(405).json({ error:"POST only" });
+  }
+
+  try {
+    const form = formidable({ maxFileSize: 50 * 1024 * 1024 }); // 50MB
+    const [_, files] = await form.parse(req);
+
+    const file = files.file?.[0];
+    if (!file) {
+      return res.status(400).json({ error:"File missing" });
     }
 
-    if (!Array.isArray(body.movies)) {
-      return res.status(400).json({ error: "movies[] missing" });
+    const raw = fs.readFileSync(file.filepath, "utf8");
+    const json = JSON.parse(raw);
+
+    if (!Array.isArray(json.movies)) {
+      return res.status(400).json({ error:"movies[] missing" });
     }
 
-    // ⛔ HARD LIMIT (important for serverless)
-    const movies = body.movies.slice(0, 20);
-
+    const movies = json.movies.slice(0, 20); // ⛔ batch limit
     const client = await pool.connect();
-    const logs = [];
     let inserted = 0, skipped = 0;
+    const logs = [];
 
     try {
       await client.query("BEGIN");
       logs.push("DB connected via pooler ✔");
 
+      const clean = v =>
+        typeof v === "string" ? v.replace(/[\[\]\(\)]/g, "") : null;
+
       for (const m of movies) {
         if (!m?.tmdb_id || !m?.title) {
-          skipped++;
-          continue;
+          skipped++; continue;
         }
 
         const ex = await client.query(
           "SELECT 1 FROM movies WHERE tmdb_id=$1",
           [m.tmdb_id]
         );
-        if (ex.rowCount) {
-          skipped++;
-          continue;
-        }
-
-        const clean = v =>
-          typeof v === "string" ? v.replace(/[\[\]\(\)]/g, "") : null;
+        if (ex.rowCount) { skipped++; continue; }
 
         const poster = await client.query(
           "INSERT INTO images (tmdb,url) VALUES (false,$1) RETURNING id",
@@ -117,34 +112,27 @@ export default async function handler(req, res) {
         );
 
         inserted++;
-        logs.push(`Inserted: ${m.title}`);
+        logs.push("Inserted: " + m.title);
       }
 
       await client.query("COMMIT");
       client.release();
 
-      return res.json({
-        success: true,
-        db_connect: true,
-        inserted,
-        skipped,
-        logs
-      });
+      return res.json({ success:true, inserted, skipped, logs });
 
     } catch (dbErr) {
       await client.query("ROLLBACK");
       client.release();
       return res.status(500).json({
-        error: "DB_TRANSACTION_FAILED",
+        error:"DB_ERROR",
         message: dbErr.message,
         logs
       });
     }
 
   } catch (fatal) {
-    // 🚨 Prevents Vercel HTML error page
     return res.status(500).json({
-      error: "FATAL_ERROR",
+      error:"FATAL_ERROR",
       message: fatal.message
     });
   }
