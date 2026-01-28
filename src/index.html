@@ -30,7 +30,7 @@ form.onsubmit = async (e) => {
 
   const fd = new FormData(form);
 
-  const res = await fetch("/api/upload-movies", {
+  const res = await fetch("/api/m_movies", {
     method: "POST",
     body: fd
   });
