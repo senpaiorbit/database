@@ -3,62 +3,107 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DB Movie Importer</title>
+<title>Movie JSON File Upload</title>
 
 <style>
 body{margin:0;font-family:monospace;background:#020617;color:#e5e7eb}
-.container{max-width:900px;margin:auto;padding:15px}
-.drop{border:2px dashed #38bdf8;padding:20px;text-align:center}
-textarea{width:100%;min-height:220px;background:#020617;color:#e5e7eb;border:1px solid #334155;padding:10px}
-button{padding:10px 18px;background:#22c55e;border:0;font-size:16px}
-.log{background:#000;padding:10px;margin-top:10px;height:200px;overflow:auto}
+.container{max-width:900px;margin:auto;padding:16px}
+.drop{
+  border:2px dashed #38bdf8;
+  padding:30px;
+  text-align:center;
+  cursor:pointer;
+}
+button{
+  padding:10px 18px;
+  background:#22c55e;
+  border:0;
+  font-size:16px;
+  margin-top:10px;
+}
+.log{
+  background:#000;
+  padding:10px;
+  margin-top:12px;
+  height:220px;
+  overflow:auto;
+}
 .status{margin-bottom:10px}
-@media(max-width:600px){textarea{min-height:180px}}
+@media(max-width:600px){
+  .drop{padding:20px}
+}
 </style>
 </head>
 
 <body>
 <div class="container">
 
-<h2>🎬 Movie JSON Import</h2>
+<h2>📦 Large Movie JSON Upload</h2>
 
-<div class="status" id="dbStatus">DB: checking…</div>
+<div class="status" id="db">DB: checking…</div>
 
-<div class="drop" onclick="file.click()">📂 Drop JSON or Tap</div>
-<input id="file" type="file" hidden>
+<div class="drop" id="drop">
+  📂 Drop JSON file here or tap to select
+</div>
 
-<textarea id="json"></textarea>
-<br><br>
-<button onclick="upload()">Upload</button>
+<input type="file" id="file" accept=".json" hidden>
+
+<button onclick="upload()">Upload File</button>
 
 <div class="log" id="log"></div>
 
 </div>
 
 <script>
+const fileInput = document.getElementById("file");
+const drop = document.getElementById("drop");
 const logBox = document.getElementById("log");
-const jsonBox = document.getElementById("json");
-const dbStatus = document.getElementById("dbStatus");
-const file = document.getElementById("file");
+const db = document.getElementById("db");
 
-function log(t){logBox.textContent+=t+"\n";logBox.scrollTop=99999;}
+let file;
 
-file.onchange=e=>{
-  const r=new FileReader();
-  r.onload=()=>jsonBox.value=r.result;
-  r.readAsText(e.target.files[0]);
+function log(t){
+  logBox.textContent += t + "\n";
+  logBox.scrollTop = 99999;
+}
+
+drop.onclick = () => fileInput.click();
+
+drop.ondragover = e => e.preventDefault();
+drop.ondrop = e => {
+  e.preventDefault();
+  file = e.dataTransfer.files[0];
+  log("Selected: " + file.name);
+};
+
+fileInput.onchange = e => {
+  file = e.target.files[0];
+  log("Selected: " + file.name);
 };
 
 async function checkDB(){
-  const r=await fetch("/api/m_upload?ping=1");
-  const j=await r.json();
-  dbStatus.textContent="DB: "+(j.db_connect?"Connected ✔":"Failed ❌");
+  const r = await fetch("/api/m_upload?ping=1");
+  const j = await r.json();
+  db.textContent = "DB: " + (j.db_connect ? "Connected ✔" : "Failed ❌");
 }
 checkDB();
 
 async function upload(){
-  log("Uploading...");
-  const res = await fetch("/api/m_upload",{method:"POST",body:jsonBox.value});
+  if(!file){
+    log("❌ No file selected");
+    return;
+  }
+
+  const fd = new FormData();
+  fd.append("file", file);
+
+  log("Uploading file…");
+
+  const res = await fetch("/api/m_upload", {
+    method:"POST",
+    body: fd
+  });
+
   const text = await res.text();
 
   try{
@@ -66,7 +111,7 @@ async function upload(){
     (j.logs||[]).forEach(l=>log(l));
     log("DONE ✔ Inserted:"+j.inserted+" Skipped:"+j.skipped);
   }catch{
-    log("❌ Invalid JSON response:");
+    log("❌ Server returned non-JSON:");
     log(text);
   }
 }
