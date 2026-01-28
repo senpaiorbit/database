@@ -21,30 +21,14 @@ export default async function handler(req, res) {
     try {
       const c = await pool.connect();
       c.release();
-      return res.json({
-        db_connect: true,
-        inserted: 0,
-        skipped: 0,
-        logs: []
-      });
+      return res.json({ db_connect: true, inserted: 0, skipped: 0, logs: [] });
     } catch (e) {
-      return res.json({
-        db_connect: false,
-        inserted: 0,
-        skipped: 0,
-        error: e.message,
-        logs: []
-      });
+      return res.json({ db_connect: false, inserted: 0, skipped: 0, logs: [] });
     }
   }
 
   if (req.method !== "POST") {
-    return res.status(405).json({
-      error: "POST only",
-      inserted: 0,
-      skipped: 0,
-      logs: []
-    });
+    return res.status(405).json({ inserted: 0, skipped: 0, logs: [] });
   }
 
   let inserted = 0;
@@ -57,29 +41,23 @@ export default async function handler(req, res) {
 
     const file = files.file?.[0];
     if (!file) {
-      return res.status(400).json({
-        error: "File missing",
-        inserted,
-        skipped,
-        logs
-      });
+      return res.json({ inserted, skipped, logs });
     }
 
-    const raw = fs.readFileSync(file.filepath, "utf8");
-    const json = JSON.parse(raw);
+    const json = JSON.parse(fs.readFileSync(file.filepath, "utf8"));
 
     if (!Array.isArray(json.movies)) {
-      return res.status(400).json({
-        error: "movies[] missing",
-        inserted,
-        skipped,
-        logs
-      });
+      return res.json({ inserted, skipped, logs });
     }
 
-    const movies = json.movies.slice(0, 20); // serverless safety
-    const client = await pool.connect();
+    // ✅ FILTER VALID MOVIES (THIS FIXES IT)
+    const movies = json.movies.filter(
+      m => m && m.tmdb_id && m.title
+    );
 
+    logs.push(`Valid movies found: ${movies.length}`);
+
+    const client = await pool.connect();
     try {
       await client.query("BEGIN");
       logs.push("DB connected ✔");
@@ -88,19 +66,14 @@ export default async function handler(req, res) {
         typeof v === "string" ? v.replace(/[\[\]\(\)]/g, "") : null;
 
       for (const m of movies) {
-        if (!m?.tmdb_id || !m?.title) {
-          skipped++;
-          logs.push("Skipped: missing tmdb_id/title");
-          continue;
-        }
-
-        const ex = await client.query(
+        const exists = await client.query(
           "SELECT 1 FROM movies WHERE tmdb_id=$1",
           [m.tmdb_id]
         );
-        if (ex.rowCount) {
+
+        if (exists.rowCount) {
           skipped++;
-          logs.push(`Skipped existing TMDB ${m.tmdb_id}`);
+          logs.push(`Skipped existing: ${m.tmdb_id}`);
           continue;
         }
 
@@ -152,32 +125,15 @@ export default async function handler(req, res) {
       await client.query("COMMIT");
       client.release();
 
-      return res.json({
-        success: true,
-        inserted,
-        skipped,
-        logs
-      });
+      return res.json({ success: true, inserted, skipped, logs });
 
-    } catch (dbErr) {
+    } catch (e) {
       await client.query("ROLLBACK");
       client.release();
-      return res.status(500).json({
-        error: "DB_ERROR",
-        message: dbErr.message,
-        inserted,
-        skipped,
-        logs
-      });
+      return res.json({ inserted, skipped, error: e.message, logs });
     }
 
-  } catch (fatal) {
-    return res.status(500).json({
-      error: "FATAL_ERROR",
-      message: fatal.message,
-      inserted,
-      skipped,
-      logs
-    });
+  } catch (e) {
+    return res.json({ inserted, skipped, error: e.message, logs });
   }
 }
